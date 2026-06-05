@@ -4,53 +4,53 @@
 
 普通打字机动画速度恒定（如每 50ms 一个字），看起来机械呆板。本算法模拟人类打字的物理节奏：随机延时抖动 + 标点智能停顿。
 
-## 算法实现
+## 算法实现（纯原生 JS，零框架依赖）
 
-```typescript
-import { useState, useEffect } from 'react';
+```javascript
+function startTypewriter(text, figureIdx) {
+  var currentCharIndex = 0;
 
-interface TypewriterProps {
-  figure: HistoricalFigureResponse;
-  isActive: boolean;
-  onComplete: () => void;
-}
+  function typeNextChar() {
+    if (currentCharIndex >= text.length) {
+      // 打字完成，隐藏光标
+      var cursor = document.getElementById('typewriter-cursor-' + figureIdx);
+      if (cursor) cursor.style.display = 'none';
 
-function Typewriter({ figure, isActive, onComplete }: TypewriterProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  useEffect(() => {
-    if (!isActive) return;
-
-    if (currentIndex < figure.text.length) {
-      const char = figure.text[currentIndex];
-      
-      // 拟真阅读节奏间隔：85ms ~ 130ms（正常人跟读速度，约7-10字/秒）
-      let delay = 85 + Math.random() * 45;
-      
-      // 根据特定字符类型执行智能拟真延时
-      if (['.', '!', '?', '。', '！', '？'].includes(char)) {
-        // 句尾呼吸停顿：500ms ~ 900ms
-        delay = 500 + Math.random() * 400;
-      } else if ([',', ';', '，', '；', ':', '：', '—', '-'].includes(char)) {
-        // 句中喘息停顿：280ms ~ 450ms
-        delay = 280 + Math.random() * 170;
-      }
-
-      const timeout = setTimeout(() => {
-        setCurrentIndex(prev => prev + 1);
-      }, delay);
-      
-      return () => clearTimeout(timeout);
-    } else if (currentIndex >= figure.text.length && figure.isComplete) {
-      // 打字完成，通知父组件
-      onComplete();
+      // 链式驱动：延迟后添加下一位人物
+      setTimeout(function() {
+        currentFigureIndex++;
+        if (currentFigureIndex < FIGURES_DATA.length) {
+          renderFigureBubble(FIGURES_DATA[currentFigureIndex]);
+        } else {
+          renderSummary();
+        }
+      }, 600);
+      return;
     }
-  }, [figure.text, currentIndex, isActive, figure.isComplete, onComplete]);
 
-  // 当新文本追加时（流式更新），继续从当前位置打字
-  // 无需重置 currentIndex，因为 useEffect 在 figure.text 变化时会重新评估
+    var char = text[currentCharIndex];
+    var textEl = document.getElementById('typewriter-text-' + figureIdx);
+    if (textEl) textEl.textContent += char;
 
-  return <span>{figure.text.slice(0, currentIndex)}</span>;
+    currentCharIndex++;
+    scrollToBottom();
+
+    // 拟真阅读节奏间隔：85ms ~ 130ms（正常人跟读速度，约7-10字/秒）
+    var delay = 85 + Math.random() * 45;
+
+    // 根据特定字符类型执行智能拟真延时
+    if (['.', '!', '?', '。', '！', '？'].indexOf(char) !== -1) {
+      // 句尾呼吸停顿：500ms ~ 900ms
+      delay = 500 + Math.random() * 400;
+    } else if ([',', ';', '，', '；', ':', '：', '—', '-'].indexOf(char) !== -1) {
+      // 句中喘息停顿：280ms ~ 450ms
+      delay = 280 + Math.random() * 170;
+    }
+
+    setTimeout(typeNextChar, delay);
+  }
+
+  typeNextChar();
 }
 ```
 
@@ -62,47 +62,37 @@ function Typewriter({ figure, isActive, onComplete }: TypewriterProps) {
 | 句末标点 | 。！？.!? | 500-900ms | 模拟人类视线停留与呼吸节奏 |
 | 句中停顿 | ，；：—-,;:- | 280-450ms | 模拟语段间歇与思考微停 |
 
-## React 状态管理集成
+## 链式驱动机制
 
-```typescript
-// 父组件管理对话流程
-function DialogueFlow({ figures }: { figures: HistoricalFigureResponse[] }) {
-  const [activeIndex, setActiveIndex] = useState(0);
+打字机完成当前人物后，通过 `setTimeout` 延迟 600ms 再添加下一位人物，形成仪式感的渐进式体验：
 
-  const handleComplete = () => {
-    // 当前人物打字完成，切换到下一位
-    if (activeIndex < figures.length - 1) {
-      setActiveIndex(prev => prev + 1);
-    }
-  };
-
-  return (
-    <div>
-      {figures.map((figure, index) => (
-        <div key={index} className="dialogue-bubble">
-          {/* 头像、名称、时代标签 */}
-          <Typewriter
-            figure={figure}
-            isActive={index === activeIndex}
-            onComplete={handleComplete}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
+```
+第一位人物入场 → 打字机逐字渲染 → 完成 → (600ms 仪式感延迟) → 第二位人物入场 → ... → 总结卡片出现
 ```
 
-## 流式更新适配
+## 框架无关设计
 
-在渐进式解析场景中，`figure.text` 会随流式接收不断增长。关键处理：
+本算法使用纯原生 JS 实现，**不依赖 React、Vue 或任何前端框架**：
 
-1. **不重置 currentIndex**：新文本追加时，打字机从当前位置继续，不会从头开始
-2. **isComplete 判断**：只有当 `figure.isComplete === true` 且打字完毕时才触发 `onComplete`
-3. **清理 timeout**：组件卸载时必须清理 `setTimeout`，避免内存泄漏
+- 使用 `document.getElementById` 操作 DOM
+- 使用 `setTimeout` 实现延时调度
+- 使用 `textContent +=` 逐字追加文本
+- 使用 `scrollToBottom()` 自动滚动
+
+### 对比 React 方案
+
+| 维度 | React 方案（旧） | 原生 JS 方案（新） |
+|------|-------------------|---------------------|
+| 框架依赖 | React + ReactDOM (~260KB) | 无 |
+| 编译依赖 | Babel Standalone (~900KB) | 无 |
+| CSS 依赖 | Tailwind CDN (~400KB) | 无 |
+| CDN 请求数 | 5 个 | 0 个 |
+| 离线可用 | ❌ | ✅ |
+| 加载时间 | 2-5 秒 | <100ms |
 
 ## 性能优化
 
-- 使用 `useCallback` 包裹 `onComplete` 回调，避免子组件不必要的重渲染
-- 对于已完成的人物，直接渲染全文而非逐字打字，减少不必要的定时器开销
-- 考虑使用 `requestAnimationFrame` 替代 `setTimeout` 在高频更新场景下的更优表现
+- 对于已完成的人物，直接渲染全文而非逐字打字
+- 每位人物独立管理自己的定时器，互不干扰
+- 页面卸载时无需手动清理（非 React 组件生命周期）
+- 使用 `textContent` 而非 `innerHTML` 避免重复解析 HTML
